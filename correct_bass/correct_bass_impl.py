@@ -32,6 +32,21 @@ def to_ratio(decibel):
     'デシベルから比率に変換'
     return numpy.power(10, decibel / 20)
 
+def time2sample(time_in_sec, samplerate):
+    '秒数からサンプル数に変換'
+    return int(time_in_sec * samplerate)
+
+def nl2sl(length_num, length_dom, bpm, sample_rate):
+    '''
+    Note Length To Sample Length.
+    length_num / length_dom 音符の長さをサンプル数で得る。
+    計算には bpm と sample_rate も必要。
+    '''
+    unit_note_length_in_sec = 4.0 * 60 * (1.0 / float(bpm))
+    length_in_sec = (float(length_num) / float(length_dom)) * unit_note_length_in_sec
+    length_in_sample = length_in_sec * sample_rate
+    return int(length_in_sample)
+
 def estimate_amplitude_envelope(samples):
     '''
     与えられたサンプル列の振幅包絡線を得る。\n
@@ -103,6 +118,7 @@ def estimate_bass_click_offset_(samples, threshold, start_offset):
     サンプル列の全範囲中のピーク差のうち最大のピーク差 * threshold までの範囲のクリックとして認識する。\n
     0.95程度の 1 に近いパラメータを推奨。\n
     start_offset は探索開始オフセットで、これよりも前のガケは検出されない。\n
+    ガケ位置としてはゼロ交差点付近が返却される。
     '''
     # 極値を全て列挙
     local_extrema_indices = argextrema(samples)
@@ -116,7 +132,7 @@ def estimate_bass_click_offset_(samples, threshold, start_offset):
     click_threshold = local_extrema_diff_max * threshold
     # ガケのうち最も過去（最初）ものを選択してそれのサンプル位置を返却
     click_index_in_extrema = numpy.where(click_threshold < local_extrema_diff)
-    click_sample_offset = local_extrema_indices[click_index_in_extrema[0][0]]
+    click_sample_offset = local_extrema_indices[click_index_in_extrema[0][0]] + int(local_extrema_distance_diff[click_index_in_extrema[0][0]] / 2)
     # 正常終了
     return click_sample_offset
 
@@ -139,7 +155,7 @@ def estimae_kick_click_offset(kick_lowband_samples, target_ratio):
     # 正常終了
     return optimal_click_offset
 
-def collect_attack_only_bass(samples, sample_rate, envelope):
+def correct_attack_only_bass(samples, sample_rate, envelope):
     '''
     samples のベース帯域のみのアタック感を補正する。\n
     cross_freq 以下の周波数をベース帯域とみなす。\n
@@ -160,10 +176,23 @@ def collect_attack_only_bass(samples, sample_rate, envelope):
     return result
 
 # ------------------------------------------------------------------------------
+# correct_bass パラメータクラス
+# ------------------------------------------------------------------------------
+
+class correct_bass_parameters:
+    def __init__(self):
+        self.samplerate = 0
+        self.is_explicit_click_offset_mode = False
+        self.bpm = 0
+        self.click_length_num = 0
+        self.click_length_dom = 0
+        self.force_offset_in_sec = 0
+
+# ------------------------------------------------------------------------------
 # correct_bass メイン実装
 # ------------------------------------------------------------------------------
 
-def correct_bass(inputs, inputs_samplerate):
+def correct_bass(inputs, parameters):
     '''
     inputs に含まれるキック波形とベース波形に補正をかける。\n
     補正処理は in-place で行われる。\n
@@ -172,6 +201,7 @@ def correct_bass(inputs, inputs_samplerate):
     inputs_samplerate には inputs に含まれるサンプル列のサンプルレートを渡す。\n
     異なるサンプルレートのサンプル列を混ぜて渡すことはできない。\n
     '''
+    # TODO verbose モードを実装
 
     # 無音が混じってないかチェック
     for i in inputs:
@@ -180,33 +210,51 @@ def correct_bass(inputs, inputs_samplerate):
             print('(error) : File = %s' % i['path'])
             return True
 
+    # ベースだけ強制オフセットをかける
+    inputs[0]['stereo_shifted'] = inputs[0]['stereo_samples']
+    for i in inputs[1:]:
+        i['stereo_shifted'] = shift_forward_and_padding(i['stereo_samples'],  time2sample(parameters.force_offset_in_sec, parameters.samplerate))
+
     # モノラル波形とそのローパス波形を事前に生成
     for i in inputs:
-        temp = i['stereo_samples']
+        temp = i['stereo_shifted']
         temp = (temp[:, 0] + temp[:, 1]) / 2.0
         i['monoral_sample'] = temp
-        i['monoral_lowband_sample'] = extract_low_band(temp, inputs_samplerate)
+        i['monoral_lowband_sample'] = extract_low_band(temp, parameters.samplerate)
 
-    # キックのローパス波形から「ガケ」合わせ位置を決定
-    optimal_click_offset = estimae_kick_click_offset(inputs[0]['monoral_lowband_sample'], to_ratio(CLICK_ENVELOPE_THREASHOLD_DECIBEL))
-    # DEBUG TODO verbose モードを実装
-    # print('optimal_click_offset = %d [samples]' % optimal_click_offset)
+    if parameters.is_explicit_click_offset_mode:
+        # TODO パラメータチェック
+        optimal_click_offset = nl2sl(parameters.click_length_num, parameters.click_length_dom, parameters.bpm, parameters.samplerate)
+    else:
+        # キックのローパス波形から「ガケ」合わせ位置を決定
+        optimal_click_offset = estimae_kick_click_offset(inputs[0]['monoral_lowband_sample'], to_ratio(CLICK_ENVELOPE_THREASHOLD_DECIBEL))
 
     # 最適な位置に「ガケ」を合わせる
     for i in inputs[1:]:
         actual_click_delay = estimate_bass_click_offset_(i['monoral_lowband_sample'], CLICK_ESTIMATE_THRESHOLD, optimal_click_offset)
-        # DEBUG
-        # print('<%s> actual_click_delay = %d [samples]' % (i['path'], actual_click_delay))
-        i['click_collected'] = shift_forward_and_padding(i['stereo_samples'], actual_click_delay - optimal_click_offset)
+        i['click_corrected'] = shift_forward_and_padding(i['stereo_shifted'], actual_click_delay - optimal_click_offset)
 
+    # TODO 引数でON/OFFを着替えられるようにとかする
+    '''
     # キックの包絡線を求める
     inputs[0]['monoral_lowband_envelope'] = estimate_amplitude_envelope(inputs[0]['monoral_lowband_sample'])
 
     # キックの包絡線をベース(200Hz以下)の振幅にアタック限定で適用
     for i in inputs[1:]:
-        i['attack_collected'] = collect_attack_only_bass(i['click_collected'], inputs_samplerate, inputs[0]['monoral_lowband_envelope'])
+        i['attack_corrected'] = correct_attack_only_bass(i['click_corrected'], parameters.samplerate, inputs[0]['monoral_lowband_envelope'])
 
     # TODO キックのリリースも調整する
+    '''
+
+    # ローパスとハイパスに分離
+    for i in inputs[1:]:
+        i['click_corrected_low'] = extract_low_band(i['click_corrected'], parameters.samplerate)
+        i['click_corrected_high'] = extract_high_band(i['click_corrected'], parameters.samplerate)
+
+    # 結果に名前をつける
+    for i in inputs[1:]:
+        i['total_corrected_low'] = i['click_corrected_low']
+        i['total_corrected_high'] = i['click_corrected_high']
 
     # 正常終了
     return False

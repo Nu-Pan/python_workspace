@@ -6,33 +6,15 @@ import numpy
 
 import soundfile as sf
 
+from details import *
+
 # ------------------------------------------------------------------------------
 # 定数
 # ------------------------------------------------------------------------------
 
-# 出ry校ファイルパス
+# 出力ファイルパス
 OUTPUT_FILE_STEM = 'output'
 OUTPUT_FILE_EXTENSION = '.wav'
-
-# 計算に使うサンプルのフォーマット
-INTERNAL_SAMPLE_FORMAT = 'float64'
-
-# 波形ファイルセーブ時のフォーマット
-EXPORT_SAMPLE_FORMAT = 'FLOAT'
-
-# ------------------------------------------------------------------------------
-# internal methods
-# ------------------------------------------------------------------------------
-
-def decompose_path(path):
-    'path を (directory, stem, extension) に分解'
-    directory, base_name = path.split(path)
-    stem, extension = path.splitext(base_name)
-    return (directory, stem, extension)
-
-def compose_path(directory, stem, extension):
-    '(directory, stem, extension) からパスを合成'
-    return path.join(directory, stem + extension)
 
 # ------------------------------------------------------------------------------
 # main
@@ -78,7 +60,7 @@ if __name__=='__main__':
         result = numpy.r_[result, TEMP_INPUT]
 
     # 結合したファイルを出力
-    output_path = compose_path(INPUT_PATH, OUTPUT_FILE_STEM, OUTPUT_FILE_EXTENSION)
+    output_path = compose_path(INPUT_PATH, OUTPUT_FILE_STEM, OUTPUT_FILE_EXTENSION)    
     sf.write(file=output_path, data=result, samplerate=SAMPLE_RATE, subtype=EXPORT_SAMPLE_FORMAT)
 
     # 正常終了
