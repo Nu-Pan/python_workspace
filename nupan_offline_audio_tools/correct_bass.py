@@ -75,21 +75,8 @@ def correct_bass(inputs, parameters):
         detected_click = detect_click(i['monoral_lowband_sample'], 0.9, 0.1)
         # 波形中の最適クリックオフセットに最も近いクリックを選択
         actual_head_click_offset = value_nearest(detected_click, detection_head_click_offset_in_samples)
-        actual_tail_click_offset = value_nearest(detected_click, actual_head_click_offset + note_length_in_samples)
-        # リサンプルを実行
-        actual_note_length = actual_tail_click_offset - actual_head_click_offset
-        round=lambda x:int((x*2+1)//2)
-        scaled_sample_count = round(parameters.samplerate * note_length_in_samples / actual_note_length)
-        scaled_actual_head_click_offset = round(actual_head_click_offset * note_length_in_samples / actual_note_length)
-
-        print('resample scale = %f' % (note_length_in_samples / actual_note_length))
-
-        #plt.plot(i['monoral_lowband_sample'])
-        #plt.plog()
-
-        i['click_scaled'] = signal.resample(i['stereo'], scaled_sample_count)
         # オフセットを実行
-        i['click_corrected'] = shift_forward_and_padding(i['click_scaled'], scaled_actual_head_click_offset - optimal_head_click_offset_in_samples)
+        i['click_corrected'] = shift_forward_and_padding(i['stereo'], actual_head_click_offset - optimal_head_click_offset_in_samples)
 
     # ローとハイに分離
     for i in inputs:
