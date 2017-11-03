@@ -2,6 +2,7 @@ import os
 import sys
 import glob
 from fractions import Fraction   
+import configparser
 
 import numpy
 
@@ -33,9 +34,9 @@ class correct_bass_parameters:
         self.bpm = 0
         self.bpm = 128
         self.head_click_offset = Fraction(0, 1)
-        self.note_length = Fraction(1, 8)
-        self.post_offset = Fraction(0, 1)
         self.detection_offset_in_samples = 2**13
+        self.peak_amplitude_threshold = 0.9
+        self.torelence_period_error_rate = 0.1
 
 # ------------------------------------------------------------------------------
 # correct_bass メイン実装
@@ -61,22 +62,19 @@ def correct_bass(inputs, parameters):
 
     # TODO パラメータチェック
     # 渡された各パラメータをサンプル数に変換
-    post_offset_in_samples = nl2sl(parameters.post_offset, parameters.bpm, parameters.samplerate)
     head_click_offset_in_samples = nl2sl(parameters.head_click_offset, parameters.bpm, parameters.samplerate)
-    note_length_in_samples = nl2sl(parameters.note_length, parameters.bpm, parameters.samplerate)
 
-    # 最適クリックオフセット（サンプル数単位）を定義
-    optimal_head_click_offset_in_samples = head_click_offset_in_samples + post_offset_in_samples
-    detection_head_click_offset_in_samples = optimal_head_click_offset_in_samples + parameters.detection_offset_in_samples
+    # 検出クリックオフセット（サンプル数単位）を定義
+    detection_head_click_offset_in_samples = head_click_offset_in_samples + parameters.detection_offset_in_samples
     
     # 波形のクリック位置が最適になるように処理する
     for i in inputs:
         # 波形から「クリック」位置を検出
-        detected_click = detect_click(i['monoral_lowband_sample'], 0.9, 0.1)
+        detected_click = detect_click(i['monoral_lowband_sample'], parameters.peak_amplitude_threshold, parameters.torelence_period_error_rate)
         # 波形中の最適クリックオフセットに最も近いクリックを選択
         actual_head_click_offset = value_nearest(detected_click, detection_head_click_offset_in_samples)
         # オフセットを実行
-        i['click_corrected'] = shift_forward_and_padding(i['stereo'], actual_head_click_offset - optimal_head_click_offset_in_samples)
+        i['click_corrected'] = shift_forward_and_padding(i['stereo'], actual_head_click_offset - head_click_offset_in_samples)
 
     # ローとハイに分離
     for i in inputs:
@@ -98,45 +96,35 @@ def correct_bass(inputs, parameters):
 
 def print_usage():
     'このプログラムの使い方を表示'
-    print('Too few number of arguments(up to 1)')
-    print('Usage1 : python correct_bass.py <bass_sample_1>.wav ... <bass_sample_N>.wav')
-    print('Usage2 : python correct_bass.py <direcyory path>')
-    print('details :')
-    print('In usage2, <directory path> must be directory that contain bass wav file.')
+    print('Usage : python correct_bass.py <direcyory path>')
+    print('<directory path> must be directory that contain ".wav" file and config ".ini" file.')
+    print('Directory allow to contain multiple ".wav" files.')
+    print('Directory allow to contain single ".ini" file.')
+
 if __name__ == '__main__':
     # 引数のエイリアスを作る
     INPUT_PATHS = sys.argv[1:]
-
-    # 引数チェック
-    if len(INPUT_PATHS) < 1:
+    # 引数の数のチェック
+    if len(INPUT_PATHS)!=1:
         print_usage()
         exit(1)
+    # 非ディレクトリ指定は NG
+    if not os.path.isdir(INPUT_PATHS[0]):
+        print('(error) : In usage2, specified path is not directory. "%s".' % INPUT_PATHS[0])
+    # 更にエイリアス
+    INPUT_DIR = INPUT_PATHS[0]
 
-    # ディレクトリ指定の場合は中身を探索して引数を作る
-    if os.path.isdir(INPUT_PATHS[0]):
-        # 指定ディレクトリ中のマッチする名前のファイルを列挙
-        INPUT_DIR = INPUT_PATHS[0]
-        FILES = glob.glob(os.path.join(INPUT_DIR, '*.wav'))
-        BASS_FILES = [x for x in FILES if 'bass' in x.lower()]
-
-        # 見つかったファイル数のチェック
-        if len(BASS_FILES) == 0:
-            print('(error) : In usage2, No bass wav file in directory "%s".' % INPUT_DIR)
-            print_usage()
-            exit(1)
-
-        # 引数リストを生成
-        INPUT_PATHS = BASS_FILES
-
-    # 引数チェック
-    if len(INPUT_PATHS) < 2:
+    # 指定ディレクトリ中の wav ファイルを列挙
+    WAV_FILES = glob.glob(os.path.join(INPUT_DIR, '*.wav'))
+    if len(WAV_FILES) == 0:
+        print('(error) No wav file in directory "%s".' % INPUT_DIR)
         print_usage()
         exit(1)
 
     # 指定ファイル全てメモリ上にロード
-    SAMPLE_RATE = 0
+    SAMPLERATE = 0
     INPUTS = []
-    for p in INPUT_PATHS:
+    for p in WAV_FILES:
         # ロード
         try:
             TEMP_INPUT, TEMP_SAMPLE_RATE = load_samples(p, INTERNAL_SAMPLE_FORMAT)
@@ -144,21 +132,18 @@ if __name__ == '__main__':
             print(err)
             print_usage()
             raise
-
         # サンプルレートをチェック
-        if SAMPLE_RATE == 0:
-            SAMPLE_RATE = TEMP_SAMPLE_RATE
-        elif SAMPLE_RATE != TEMP_SAMPLE_RATE:
+        if SAMPLERATE == 0:
+            SAMPLERATE = TEMP_SAMPLE_RATE
+        elif SAMPLERATE != TEMP_SAMPLE_RATE:
             print('Wrong sample rate is detected in input files.')
             print('File = ' + p)
-            print('Expected sample rate = ' + SAMPLE_RATE)
+            print('Expected sample rate = ' + SAMPLERATE)
             print('Actual sample rate = ' + TEMP_SAMPLE_RATE)
             exit(1)
-
         # 無音じゃないかチェック
         if is_slient_samples(TEMP_INPUT):
             continue
-
         # ロードした波形をリストに追加
         INPUTS.append({'stereo': TEMP_INPUT, 'path': p})
 
@@ -173,20 +158,27 @@ if __name__ == '__main__':
     if is_valid_order:
         INPUTS = sorted(INPUTS, key=lambda input: input['order'])
 
-    ''' TODO
-    - 外部設定ファイル化したい
-    - 末尾側ピーク位置を指定したい
-    - 先頭側ピークと末尾側ピークの気の利いた名前を考えないと
-    - 一定の波形が続くのだからピーク間間隔の中央値をとればピッチを検出できそう
-    '''
-    # 補正処理の挙動を記述
+    # 指定ディレクトリ中の ini ファイルを列挙
+    INI_FILES = glob.glob(os.path.join(INPUT_DIR, '*.ini'))
+    if len(INI_FILES) == 0:
+        print('(error) No ini file in directory "%s".' % INPUT_DIR)
+        print_usage()
+        exit(1)
+    elif 1 < len(INI_FILES):
+        print('(error) Too many ini files in directory "%s".' % INPUT_DIR)
+        print_usage()
+        exit(1)
+
+    # 補正処理の挙動を設定ファイルから読み込み
+    config = configparser.ConfigParser()
+    config.read(INI_FILES[0])
     parameters = correct_bass_parameters()
-    parameters.samplerate = SAMPLE_RATE
-    parameters.bpm = 170
-    parameters.head_click_offset = Fraction(1, 128)
-    parameters.note_length = Fraction(12, 128)
-    parameters.post_offset = Fraction(-3, 256)
-    parameters.detection_offset_in_samples = 1024
+    parameters.samplerate = SAMPLERATE
+    parameters.bpm = int(config['specific']['bpm'])
+    parameters.head_click_offset = Fraction(config['specific']['head_click_offset'])
+    parameters.detection_offset_in_samples = int(config['empirical']['detection_offset_in_samples'])
+    parameters.peak_amplitude_threshold = float(config['empirical']['peak_amplitude_threshold'])
+    parameters.torelence_period_error_rate = float(config['empirical']['torelence_period_error_rate'])
 
     # 補正処理呼び出し
     if correct_bass(INPUTS, parameters):
@@ -210,9 +202,9 @@ if __name__ == '__main__':
     make_directory_exist(output_path_low)
     make_directory_exist(output_path_high)
     make_directory_exist(output_path_full)
-    save_samples(output_path_low, composed_low, SAMPLE_RATE, EXPORT_SAMPLE_FORMAT)
-    save_samples(output_path_high, composed_high, SAMPLE_RATE, EXPORT_SAMPLE_FORMAT)
-    save_samples(output_path_full, composed_full, SAMPLE_RATE, EXPORT_SAMPLE_FORMAT)
+    save_samples(output_path_low, composed_low, SAMPLERATE, EXPORT_SAMPLE_FORMAT)
+    save_samples(output_path_high, composed_high, SAMPLERATE, EXPORT_SAMPLE_FORMAT)
+    save_samples(output_path_full, composed_full, SAMPLERATE, EXPORT_SAMPLE_FORMAT)
 
     # 正常終了
     exit(0)
