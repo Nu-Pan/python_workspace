@@ -25,7 +25,7 @@ CLICK_ESTIMATE_THRESHOLD = 0.95
 CLICK_ENVELOPE_THREASHOLD_DECIBEL = -6
 
 # ------------------------------------------------------------------------------
-# correct_bass パラメータクラス
+# multiband_tool パラメータクラス
 # ------------------------------------------------------------------------------
 
 class correct_bass_parameters:
@@ -40,15 +40,15 @@ class correct_bass_parameters:
         self.is_verbose = False
 
 # ------------------------------------------------------------------------------
-# correct_bass メイン実装
+# multiband_tool メイン実装
 # ------------------------------------------------------------------------------
 
-def correct_bass(inputs, parameters):
+def multiband_tool(inputs, parameters):
     '''
     inputs に含まれるキック波形とベース波形に補正をかける。\n
     補正処理は in-place で行われる。\n
     \n
-    inputs の形式については correct_bass.py の呼び出し箇所を参照。\n
+    inputs の形式については multiband_tool.py の呼び出し箇所を参照。\n
     inputs_samplerate には inputs に含まれるサンプル列のサンプルレートを渡す。\n
     異なるサンプルレートのサンプル列を混ぜて渡すことはできない。\n
     '''
@@ -123,7 +123,7 @@ def correct_bass(inputs, parameters):
 
 def print_usage():
     'このプログラムの使い方を表示'
-    print('Usage : python correct_bass.py <direcyory path>')
+    print('Usage : python multiband_tool.py <direcyory path>')
     print('<directory path> must be directory that contain ".wav" file and config ".ini" file.')
     print('Directory allow to contain multiple ".wav" files.')
     print('Directory allow to contain single ".ini" file.')
@@ -209,7 +209,7 @@ if __name__ == '__main__':
     parameters.is_verbose = bool(config['empirical']['is_verbose'])
 
     # 補正処理呼び出し
-    if correct_bass(INPUTS, parameters):
+    if multiband_tool(INPUTS, parameters):
         print('(error) : Some error has occured.')
         exit(1)
 
