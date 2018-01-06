@@ -1,7 +1,7 @@
 import os
 import sys
 import glob
-from fractions import Fraction   
+from fractions import Fraction
 import configparser
 
 import numpy

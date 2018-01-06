@@ -4,6 +4,7 @@ import glob
 from fractions import Fraction   
 import configparser
 import math
+from functools import partial
 
 import numpy
 import scipy.fftpack 
@@ -59,21 +60,19 @@ def query_freq_list(samples):
 def wrap_phase(phases):
     return numpy.arctan2(numpy.sin(phases), numpy.cos(phases))
 
-def apply_butter_worth(samples, frequency, order):
+def apply_butter_worth(samples, frequency, order, is_zero_phase):
     b, a = signal.butter(order, normalize_frequency(frequency, SAMPLE_RATE), FILTER_TYPE)
-    return signal.lfilter(b, a, samples)
+    if is_zero_phase:
+        return signal.filtfilt(b, a, samples)
+    else:
+        return signal.lfilter(b, a, samples)
 
-def apply_butter_worth_zero(samples, frequency, order):
-    b, a = signal.butter(order, normalize_frequency(frequency, SAMPLE_RATE), FILTER_TYPE)
-    return signal.filtfilt(b, a, samples)
-
-def apply_chebyshev_1st(samples, frequency, order):
+def apply_chebyshev_1st(samples, frequency, order, is_zero_phase):
     b, a = signal.cheby1(order, ALLOW_RIPPLE, normalize_frequency(frequency, SAMPLE_RATE), FILTER_TYPE)
-    return signal.lfilter(b, a, samples)
-
-def apply_chebyshev_1st_zero(samples, frequency, order):
-    b, a = signal.cheby1(order, ALLOW_RIPPLE, normalize_frequency(frequency, SAMPLE_RATE), FILTER_TYPE)
-    return signal.filtfilt(b, a, samples)
+    if is_zero_phase:
+        return signal.filtfilt(b, a, samples)
+    else:
+        return signal.lfilter(b, a, samples)
     
 def create_impulse(length):
     INPULSE = numpy.zeros(length)
@@ -118,18 +117,40 @@ def estimate_optimal_cutoff_freqency(filter_function, base_frequency, order, tar
 # ------------------------------------------------------------------------------
 
 if __name__ == '__main__':
-    FILTER_FUNCTION = apply_butter_worth_zero
-    FILTER_ORDER = 4
 
-    TARGET_GAIN = -3
-    TARGET_FREQ = 50
-    DISPLAY_FREQ = [40, 50, 60]
+    # 引数個数チェック
+    if len(sys.argv)!=2:
+        print('Invalid number of arguments.')
+        exit(1)
+
+    # ファイルから設定をロード
+    config = configparser.ConfigParser()
+    config.read(sys.argv[1])
+    if config['behavior']['FILTER_TYPE'] == 'butter':
+        FILTER_FUNCTION = apply_butter_worth
+    elif config['behavior']['FILTER_TYPE'] == 'cheby':
+        FILTER_FUNCTION = apply_chebyshev_1st
+    else:
+        print('invalid FILTER_TYPE.')
+        exit(1)
+    FILTER_FUNCTION = partial(FILTER_FUNCTION, is_zero_phase=bool( config['behavior']['IS_ZERO_PHASE'] ) )
+    FILTER_ORDER = int(config['behavior']['FILTER_ORDER'])
+    TARGET_GAIN = int(config['behavior']['TARGET_GAIN'])
+    TARGET_FREQ = int(config['behavior']['TARGET_FREQ'])
+    ITERATION_COUNT = int(config['behavior']['ITERATION_COUNT'])
+    QUERY_FREQ = [int(s) for s in config['display']['QUERY_FREQ'].split(',')]
+    PLOT_MIN_FREQ = int(config['display']['PLOT_MIN_FREQ'])
+    PLOT_MAX_FREQ = int(config['display']['PLOT_MAX_FREQ'])
+    PLOT_MIN_MAG = int(config['display']['PLOT_MIN_MAG'])
+    PLOT_MAX_MAG = int(config['display']['PLOT_MAX_MAG'])
+    PLOT_MIN_PHASE = int(config['display']['PLOT_MIN_PHASE'])
+    PLOT_MAX_PHASE = int(config['display']['PLOT_MAX_PHASE'])
 
     # 最適なカットオフ周波数を推定
-    WORKING_CUTOFF_FREQUENCY = 50
-    OPTIMAL_CUTOFF_FREQUENCY = 50
+    WORKING_CUTOFF_FREQUENCY = TARGET_FREQ
+    OPTIMAL_CUTOFF_FREQUENCY = TARGET_FREQ
     OPTIMAL_ERROR = float('inf')
-    for i in range(1, 100):
+    for i in range(1, 1000):
         WORKING_CUTOFF_FREQUENCY = estimate_optimal_cutoff_freqency(FILTER_FUNCTION, WORKING_CUTOFF_FREQUENCY, FILTER_ORDER, TARGET_GAIN, TARGET_FREQ)
         FREQUENCY_LIST, RESPONSE_AMPLITUDE, RESPONSE_PHASE = calculate_frequency_response(FILTER_FUNCTION, WORKING_CUTOFF_FREQUENCY, FILTER_ORDER)
         WORKING_ERROR = numpy.abs(query_amplitude_response_from_frequency(FREQUENCY_LIST, RESPONSE_AMPLITUDE, TARGET_FREQ)[1] - TARGET_GAIN)
@@ -140,7 +161,7 @@ if __name__ == '__main__':
     # イテレーション中で見つけた最適なカットオフ周波数で再計算
     FREQUENCY_LIST, RESPONSE_AMPLITUDE, RESPONSE_PHASE = calculate_frequency_response(FILTER_FUNCTION, OPTIMAL_CUTOFF_FREQUENCY, FILTER_ORDER)
     print('cutoff=%f' % (OPTIMAL_CUTOFF_FREQUENCY,))
-    for f in DISPLAY_FREQ:
+    for f in QUERY_FREQ:
         RESULT_FREQ, RESULT_AMPLITUDE = query_amplitude_response_from_frequency(FREQUENCY_LIST, RESPONSE_AMPLITUDE, f)
         print('amplitude@%.2fHz=%.2f' % (RESULT_FREQ, RESULT_AMPLITUDE, ) )
 
@@ -149,15 +170,15 @@ if __name__ == '__main__':
     plt.xscale('log')
     plt.grid(which='major',color='black',linestyle='-')
     plt.grid(which='minor',color='black',linestyle='-')
-    plt.xlim(20, 200)
-    plt.ylim(-24, 3)
+    plt.xlim(PLOT_MIN_FREQ, PLOT_MAX_FREQ)
+    plt.ylim(PLOT_MIN_MAG, PLOT_MAX_MAG)
     plt.plot(FREQUENCY_LIST, RESPONSE_AMPLITUDE, linestyle='-', label = 'original')
     plt.subplot(2, 1, 2)
     plt.xscale('log')
     plt.grid(which='major',color='black',linestyle='-')
     plt.grid(which='minor',color='black',linestyle='-')
-    plt.xlim(20, 200)
-    plt.ylim(-180, +180)
+    plt.xlim(PLOT_MIN_FREQ, PLOT_MAX_FREQ)
+    plt.ylim(PLOT_MIN_PHASE, PLOT_MAX_PHASE)
     plt.plot(FREQUENCY_LIST, numpy.degrees(RESPONSE_PHASE), linestyle='-', label = 'original')
 
     # 結果表示
