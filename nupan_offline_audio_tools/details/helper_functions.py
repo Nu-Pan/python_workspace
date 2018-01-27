@@ -85,3 +85,23 @@ def value_nearest(array, query):
     array 中の query に最も近ち値を得る
     '''
     return array[where_nearest(array, query)]
+
+def create_same_zeros(samples):
+    '''
+    指定配列と同じ shape なゼロ初期化済み配列を生成
+    '''
+    return numpy.zeros(samples.shape, samples.dtype)
+
+def create_same_empty(samples):
+    '''
+    指定配列と同じ shape なみ初期化配列を生成
+    '''
+    return numpy.empty(samples.shape, samples.dtype)
+
+def string2bool(bool_string):
+    if bool_string == 'True' or bool_string == 'true':
+        return True
+    elif bool_string == 'False' or bool_string == 'false':
+        return False
+    else:
+        return None

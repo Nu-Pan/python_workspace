@@ -142,63 +142,21 @@ if __name__ == '__main__':
     INPUT_DIR = INPUT_PATHS[0]
 
     # 指定ディレクトリ中の wav ファイルを列挙
-    WAV_FILES = glob.glob(os.path.join(INPUT_DIR, '*.wav'))
-    if len(WAV_FILES) == 0:
-        print('(error) No wav file in directory "%s".' % INPUT_DIR)
-        print_usage()
+    WAV_FILES = find_wav_files(INPUT_DIR)
+    if WAV_FILES is None:
         exit(1)
 
     # 指定ファイル全てメモリ上にロード
-    SAMPLERATE = 0
-    INPUTS = []
-    for p in WAV_FILES:
-        # ロード
-        try:
-            TEMP_INPUT, TEMP_SAMPLE_RATE = load_samples(p, INTERNAL_SAMPLE_FORMAT)
-        except Exception as err:
-            print(err)
-            print_usage()
-            raise
-        # サンプルレートをチェック
-        if SAMPLERATE == 0:
-            SAMPLERATE = TEMP_SAMPLE_RATE
-        elif SAMPLERATE != TEMP_SAMPLE_RATE:
-            print('Wrong sample rate is detected in input files.')
-            print('File = ' + p)
-            print('Expected sample rate = ' + SAMPLERATE)
-            print('Actual sample rate = ' + TEMP_SAMPLE_RATE)
-            exit(1)
-        # 無音じゃないかチェック
-        if is_slient_samples(TEMP_INPUT):
-            continue
-        # ロードした波形をリストに追加
-        INPUTS.append({'stereo': TEMP_INPUT, 'path': p})
-
-    # ファイル名末尾の番号でソート(末尾番号がついてなければソートしない)
-    is_valid_order = False
-    for i in INPUTS:
-        _, stem, _ = decompose_path(i['path'])
-        detected_order = detect_stem_tail_number(stem)
-        if detected_order != 0:
-            is_valid_order = True
-        i['order'] = detected_order
-    if is_valid_order:
-        INPUTS = sorted(INPUTS, key=lambda input: input['order'])
+    INPUTS, SAMPLERATE = load_wav_files(WAV_FILES, INTERNAL_SAMPLE_FORMAT)
 
     # 指定ディレクトリ中の ini ファイルを列挙
-    INI_FILES = glob.glob(os.path.join(INPUT_DIR, '*.ini'))
-    if len(INI_FILES) == 0:
-        print('(error) No ini file in directory "%s".' % INPUT_DIR)
-        print_usage()
-        exit(1)
-    elif 1 < len(INI_FILES):
-        print('(error) Too many ini files in directory "%s".' % INPUT_DIR)
-        print_usage()
+    INI_FILE = find_ini_file(INPUT_DIR)
+    if INI_FILE is None:
         exit(1)
 
     # 補正処理の挙動を設定ファイルから読み込み
     config = configparser.ConfigParser()
-    config.read(INI_FILES[0])
+    config.read(INI_FILE)
     parameters = correct_bass_parameters()
     parameters.samplerate = SAMPLERATE
     parameters.bpm = int(config['specific']['bpm'])

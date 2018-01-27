@@ -1,10 +1,11 @@
 import numpy
 
 from .helper_functions import argextrema
-from .filter_functions import extract_low_band
-from .filter_functions import extract_high_band
+from .helper_functions import compose_samples
+from .filter_functions import apply_zplr
 
 import matplotlib.pyplot as plt
+from statistics import mean
 
 # ------------------------------------------------------------------------------
 # constants
@@ -70,8 +71,8 @@ def correct_attack_only_bass(samples, sample_rate, envelope):
     envelope を補正として適用する。\n
     '''
     # 帯域を分離
-    lowband = extract_low_band(samples, sample_rate)
-    highband = extract_high_band(samples, sample_rate)
+    lowband = apply_zplr(samples, 'low', 200, sample_rate)
+    highband = apply_zplr(samples, 'high', 200, sample_rate)
     # 補正に使うエンベロープを用意（先頭から最高ピークまでの範囲を切り出して最大 1.0 に正規化）
     trim_length = numpy.argmax(envelope)
     trimmed_envelope = envelope[0:trim_length]
@@ -227,3 +228,30 @@ def detect_click(samples, peak_amplitude_threshold, torelence_period_error_rate)
 
     # 正常終了
     return click_zerocross_offset
+
+def convert_to_median_rms(samples, window_size):
+    '''
+    引数 samples を RMS に変換する。
+    あるサンプル位置における RMS をその位置の前後 +- window_size / 2 サンプルの範囲で計算し
+    その結果として得られた RMS 配列の中央値を samples の RMS とみなす。
+    '''
+    per_ch_rms = []
+    for i in range(0, samples.shape[1]):
+        samples_ch = samples[:,i]
+        samples_s = samples_ch * samples_ch
+        window = numpy.ones(window_size) / window_size
+        samples_ms = numpy.convolve(samples_s, window, 'full')
+        samples_rms = numpy.sqrt(samples_ms)
+        samples_rms.sort()
+        per_ch_rms.append(samples_rms[int(len(samples_rms)/2)])
+    return mean(per_ch_rms)
+
+def convert_to_median_peak(samples, window_size):
+    '''
+    引数 samples をピークの配列に変換する。
+    あるサンプル位置におけるピークをその位置の前後 +- window_size / 2 サンプルの範囲で計算されし
+    その結果として得られたピーク配列の中央値を samples の RMS とみなす。
+    '''
+    samples_peak = scipy.ndimage.filters.maximum_filter1d(samples, window_size)
+    samples_peak.sort()
+    return samples_peak[int(len(samples_peak)/2)]

@@ -17,222 +17,148 @@ from details import *
 # 出力ファイルにつけるプリフィックス
 OUTPUT_FILE_PREFIX = 'output\\'
 
-# ファイル名に付属する番号の桁数
-FILESTEM_NUMBER_OF_DIGIT = 3
-
-# 「ガケ」位置検出に使うパラメータ
-CLICK_ESTIMATE_THRESHOLD = 0.95
-CLICK_ENVELOPE_THREASHOLD_DECIBEL = -6
-
 # ------------------------------------------------------------------------------
-# multiband_tool パラメータクラス
+# structure definitions
 # ------------------------------------------------------------------------------
 
-class correct_bass_parameters:
+class band_param:
     def __init__(self):
-        self.samplerate = 0
-        self.bpm = 0
-        self.bpm = 128
-        self.head_click_offset = Fraction(0, 1)
-        self.detection_offset_in_samples = 2**13
-        self.peak_amplitude_threshold = 0.9
-        self.torelence_period_error_rate = 0.1
-        self.is_verbose = False
-
-# ------------------------------------------------------------------------------
-# multiband_tool メイン実装
-# ------------------------------------------------------------------------------
-
-def multiband_tool(inputs, parameters):
-    '''
-    inputs に含まれるキック波形とベース波形に補正をかける。\n
-    補正処理は in-place で行われる。\n
-    \n
-    inputs の形式については multiband_tool.py の呼び出し箇所を参照。\n
-    inputs_samplerate には inputs に含まれるサンプル列のサンプルレートを渡す。\n
-    異なるサンプルレートのサンプル列を混ぜて渡すことはできない。\n
-    '''
-    # TODO verbose モードを実装
-
-    # モノラル波形とそのローパス波形を事前に生成
-    if parameters.is_verbose:
-        print('*** create monoral & lowpass samples ***')
-    for i in inputs:
-        if parameters.is_verbose:
-            print('path=' + i['path'])
-        temp = i['stereo']
-        temp = (temp[:, 0] + temp[:, 1]) / 2.0
-        i['monoral_sample'] = temp
-        i['monoral_lowband_sample'] = extract_low_band(temp, parameters.samplerate)
-
-    # TODO パラメータチェック
-
-    if parameters.is_verbose:
-        print('*** convert parameters ***')
-
-    # 渡された各パラメータをサンプル数に変換
-    head_click_offset_in_samples = nl2sl(parameters.head_click_offset, parameters.bpm, parameters.samplerate)
-    if parameters.is_verbose:
-        print('head_click_offset_in_samples = %d' % head_click_offset_in_samples)
-
-    # 検出クリックオフセット（サンプル数単位）を定義
-    detection_head_click_offset_in_samples = head_click_offset_in_samples + parameters.detection_offset_in_samples
-    if parameters.is_verbose:
-        print('detection_head_click_offset_in_samples = %d' % detection_head_click_offset_in_samples)
-    
-    # 波形のクリック位置が最適になるように処理する
-    if parameters.is_verbose:
-        print('*** correct offsets ***')
-    for i in inputs:
-        if parameters.is_verbose:
-            print('path=' + i['path'])
-        # 波形から「クリック」位置を検出
-        detected_click = detect_click(i['monoral_lowband_sample'], parameters.peak_amplitude_threshold, parameters.torelence_period_error_rate)
-        if parameters.is_verbose:
-            print('detected_click.size=%d' % detected_click.size)
-            print(detected_click)
-        # 波形中の最適クリックオフセットに最も近いクリックを選択
-        actual_head_click_offset = value_nearest(detected_click, detection_head_click_offset_in_samples)
-        if parameters.is_verbose:
-            print('detection_head_click_offset_in_samples=%d' % detection_head_click_offset_in_samples)        
-            print('actual_head_click_offset=%d' % actual_head_click_offset)        
-        # オフセットを実行
-        i['click_corrected'] = shift_forward_and_padding(i['stereo'], actual_head_click_offset - head_click_offset_in_samples)
-
-    # ローとハイに分離
-    if parameters.is_verbose:
-        print('*** split low / high ***')
-    for i in inputs:
-        i['click_corrected_low'] = extract_low_band(i['click_corrected'], parameters.samplerate)
-        i['click_corrected_high'] = extract_high_band(i['click_corrected'], parameters.samplerate)
-
-    # 結果に名前をつける
-    if parameters.is_verbose:
-        print('*** save results ***')
-    for i in inputs:
-        i['total_corrected_low'] = i['click_corrected_low']
-        i['total_corrected_high'] = i['click_corrected_high']
-        i['total_corrected_full'] = i['click_corrected_low'] + i['click_corrected_high']
-
-    # 正常終了
-    return False
+        self.lower_type = 'butter'
+        self.lower_mode = 'high'
+        self.lower_order = 2
+        self.lower_freq = 20
+        self.lower_is_zero_phase = True
+        self.upper_type = 'butter'
+        self.upper_mode = 'low'
+        self.upper_order = 2
+        self.upper_freq = 20000
+        self.upper_is_zero_phase = True
+        self.normalization_mode = 'none'
+        self.normalization_target_override = False
+        self.normalization_target = 0
+        self.gain = 0
+        self.is_file_out = False
+        self.postfix = ''
 
 # ------------------------------------------------------------------------------
 # main
 # ------------------------------------------------------------------------------
 
-def print_usage():
-    'このプログラムの使い方を表示'
-    print('Usage : python multiband_tool.py <direcyory path>')
-    print('<directory path> must be directory that contain ".wav" file and config ".ini" file.')
-    print('Directory allow to contain multiple ".wav" files.')
-    print('Directory allow to contain single ".ini" file.')
-
 if __name__ == '__main__':
-    # 引数のエイリアスを作る
-    INPUT_PATHS = sys.argv[1:]
-    # 引数の数のチェック
-    if len(INPUT_PATHS)!=1:
-        print_usage()
+    # 引数チェック
+    if len(sys.argv)!=2:
+        print('Invalid number of arguments.')
         exit(1)
-    # 非ディレクトリ指定は NG
-    if not os.path.isdir(INPUT_PATHS[0]):
-        print('(error) : In usage2, specified path is not directory. "%s".' % INPUT_PATHS[0])
-    # 更にエイリアス
-    INPUT_DIR = INPUT_PATHS[0]
+
+    # エイリアス
+    INPUT_DIR = sys.argv[1]
+
+    # ディレクトリ以外の指定は NG
+    if not os.path.isdir(INPUT_DIR):
+        print('Specified path is not directory. "%s".' % INPUT_DIR)
+        exit(1)
 
     # 指定ディレクトリ中の wav ファイルを列挙
-    WAV_FILES = glob.glob(os.path.join(INPUT_DIR, '*.wav'))
-    if len(WAV_FILES) == 0:
-        print('(error) No wav file in directory "%s".' % INPUT_DIR)
-        print_usage()
+    WAV_FILES = find_wav_files(INPUT_DIR)
+    if WAV_FILES is None:
         exit(1)
 
     # 指定ファイル全てメモリ上にロード
-    SAMPLERATE = 0
-    INPUTS = []
-    for p in WAV_FILES:
-        # ロード
-        try:
-            TEMP_INPUT, TEMP_SAMPLE_RATE = load_samples(p, INTERNAL_SAMPLE_FORMAT)
-        except Exception as err:
-            print(err)
-            print_usage()
-            raise
-        # サンプルレートをチェック
-        if SAMPLERATE == 0:
-            SAMPLERATE = TEMP_SAMPLE_RATE
-        elif SAMPLERATE != TEMP_SAMPLE_RATE:
-            print('Wrong sample rate is detected in input files.')
-            print('File = ' + p)
-            print('Expected sample rate = ' + SAMPLERATE)
-            print('Actual sample rate = ' + TEMP_SAMPLE_RATE)
-            exit(1)
-        # 無音じゃないかチェック
-        if is_slient_samples(TEMP_INPUT):
-            continue
-        # ロードした波形をリストに追加
-        INPUTS.append({'stereo': TEMP_INPUT, 'path': p})
-
-    # ファイル名末尾の番号でソート(末尾番号がついてなければソートしない)
-    is_valid_order = False
-    for i in INPUTS:
-        _, stem, _ = decompose_path(i['path'])
-        detected_order = detect_stem_tail_number(stem)
-        if detected_order != 0:
-            is_valid_order = True
-        i['order'] = detected_order
-    if is_valid_order:
-        INPUTS = sorted(INPUTS, key=lambda input: input['order'])
+    INPUTS, SAMPLERATE = load_wav_files(WAV_FILES, INTERNAL_SAMPLE_FORMAT)
 
     # 指定ディレクトリ中の ini ファイルを列挙
-    INI_FILES = glob.glob(os.path.join(INPUT_DIR, '*.ini'))
-    if len(INI_FILES) == 0:
-        print('(error) No ini file in directory "%s".' % INPUT_DIR)
-        print_usage()
-        exit(1)
-    elif 1 < len(INI_FILES):
-        print('(error) Too many ini files in directory "%s".' % INPUT_DIR)
-        print_usage()
+    INI_FILE = find_ini_file(INPUT_DIR)
+    if INI_FILE is None:
         exit(1)
 
     # 補正処理の挙動を設定ファイルから読み込み
     config = configparser.ConfigParser()
-    config.read(INI_FILES[0])
-    parameters = correct_bass_parameters()
-    parameters.samplerate = SAMPLERATE
-    parameters.bpm = int(config['specific']['bpm'])
-    parameters.head_click_offset = Fraction(config['specific']['head_click_offset'])
-    parameters.detection_offset_in_samples = int(config['empirical']['detection_offset_in_samples'])
-    parameters.peak_amplitude_threshold = float(config['empirical']['peak_amplitude_threshold'])
-    parameters.torelence_period_error_rate = float(config['empirical']['torelence_period_error_rate'])
-    parameters.is_verbose = bool(config['empirical']['is_verbose'])
+    config.read(INI_FILE)
+    output_file_prefix = config['global']['output_file_prefix']
+    output_file_sufix = config['global']['output_file_sufix']
+    is_serial_connection = config['global']['connection_mode'] == 'serial'
+    band_params = []
+    for section in config.sections():
+        if section in ['global', 'DEFAULT'] :
+            continue
+        temp = band_param()
+        temp.lower_type = config[section]['lower_type']
+        temp.lower_mode = config[section]['lower_mode']
+        temp.lower_order = int(config[section]['lower_order'])
+        temp.lower_freq = float(config[section]['lower_freq'])
+        temp.lower_is_zero_phase = string2bool(config[section]['lower_is_zero_phase'])
+        temp.upper_type = config[section]['upper_type']
+        temp.upper_mode = config[section]['upper_mode']
+        temp.upper_order = int(config[section]['upper_order'])
+        temp.upper_freq = float(config[section]['upper_freq'])
+        temp.upper_is_zero_phase = string2bool(config[section]['upper_is_zero_phase'])
+        temp.normalization_mode = config[section]['normalization_mode']
+        temp.normalization_target_override = string2bool(config[section]['normalization_target_override'])
+        temp.normalization_target = float(config[section]['normalization_target'])
+        temp.gain = float(config[section]['gain'])
+        temp.is_file_out = string2bool(config[section]['is_file_out'])
+        temp.sufix = config[section]['sufix']
+        band_params.append(temp)
 
-    # 補正処理呼び出し
-    if multiband_tool(INPUTS, parameters):
-        print('(error) : Some error has occured.')
-        exit(1)
-
-    # 補正結果を１つの波形に結合
-    composed_low = numpy.empty((0, 2), INTERNAL_SAMPLE_FORMAT)
-    composed_high = numpy.empty((0, 2), INTERNAL_SAMPLE_FORMAT)
-    composed_full = numpy.empty((0, 2), INTERNAL_SAMPLE_FORMAT)
+    # 全ての wav ファイルに対してマルチバンド分離
     for i in INPUTS:
-        composed_low = numpy.r_[composed_low, i['total_corrected_low']]
-        composed_high = numpy.r_[composed_high, i['total_corrected_high']]
-        composed_full = numpy.r_[composed_full, i['total_corrected_full']]
+        temp_samples = i['stereo']
+        for param in band_params:
+            # バンド抽出
+            band = create_same_empty(temp_samples)
+            band[:] = temp_samples
+            if not param.lower_type == 'bypass':
+                band = apply_filter(band, param.lower_type, param.lower_mode, param.lower_order, param.lower_freq, SAMPLERATE, param.lower_is_zero_phase)
+            if not param.upper_type == 'bypass':
+                band = apply_filter(band, param.upper_type, param.upper_mode, param.upper_order, param.upper_freq, SAMPLERATE, param.upper_is_zero_phase)
+            # 抽出した分をオリジナルから減算
+            if is_serial_connection:
+                temp_samples = temp_samples - band
+            # バンド波形の基準量（ピークとかRMSとか）を計算
+            if param.normalization_mode=='none':
+                i['band_criteria_' + param.sufix] = 1.0
+            elif param.normalization_mode=='peak':
+                i['band_criteria_' + param.sufix] = convert_to_median_prak(band, time2sample(0.3, SAMPLERATE))
+            elif param.normalization_mode=='rms':
+                i['band_criteria_' + param.sufix] = convert_to_median_rms(band, time2sample(0.3, SAMPLERATE))
+            else:
+                print('Invalid normalization_mode in loaded .ini file. Pass through normalization and continue.')            
+            # バンド波形を保存
+            i['band_sample_' + param.sufix] = band
 
-    # 補正をかけたベース波形を出力
-    directory, _, extension = decompose_path(INPUTS[0]['path'])
-    output_path_low = compose_path(directory, OUTPUT_FILE_PREFIX + 'output_low', extension)
-    output_path_high = compose_path(directory, OUTPUT_FILE_PREFIX + 'output_high', extension)
-    output_path_full = compose_path(directory, OUTPUT_FILE_PREFIX + 'output_full', extension)
-    make_directory_exist(output_path_low)
-    make_directory_exist(output_path_high)
-    make_directory_exist(output_path_full)
-    save_samples(output_path_low, composed_low, SAMPLERATE, EXPORT_SAMPLE_FORMAT)
-    save_samples(output_path_high, composed_high, SAMPLERATE, EXPORT_SAMPLE_FORMAT)
-    save_samples(output_path_full, composed_full, SAMPLERATE, EXPORT_SAMPLE_FORMAT)
+    # バンドごとにノーマライズを実行
+    for param in band_params:
+        # ノーマライズの基準量を決定
+        if param.normalization_target_override:
+            # オーバーライドの指定がある場合はその値を目標基準量にする
+            target_criteria = to_ratio(param.normalization_target)
+        else:
+            # オーバーライドが指定されていなければ基準量の中央値を目標基準量とする
+            criteria_array = []
+            for i in INPUTS:
+                criteria_array.append(i['band_criteria_' + param.sufix])
+            criteria_array.sort()
+            target_criteria = criteria_array[int(len(criteria_array)/2)]
+        # 基準量が揃うように振幅を調整＋ゲインを適用
+        for i in INPUTS:
+            i['band_sample_' + param.sufix] = i['band_sample_' + param.sufix] * (target_criteria / i['band_criteria_' + param.sufix]) * to_ratio(param.gain)
+
+    # ファイル出力
+    for i in INPUTS:
+        result_samples = create_same_zeros(i['stereo'])
+        for param in band_params:
+            band = i['band_sample_' + param.sufix]
+            # 必要なバンド単位の結果をファイルアウト
+            if param.is_file_out:
+                dir_path, stem, ext = decompose_path(i['path'])
+                outpath = dir_path + '\\' + output_file_prefix + stem + param.sufix + ext
+                save_samples(outpath, band, SAMPLERATE, 'float')
+            # 結果用変数に加算
+            result_samples = result_samples + band
+        # 全バンドの加算結果をファイル出力
+        dir_path, stem, ext = decompose_path(i['path'])
+        outpath = dir_path + '\\' + output_file_prefix + stem + output_file_sufix + ext
+        save_samples(outpath, result_samples, SAMPLERATE, 'float')
 
     # 正常終了
     exit(0)
