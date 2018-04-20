@@ -13,7 +13,7 @@ from .default_constants import *
 
 def to_decibel(ratio):
     '比率からデシベルに変換'
-    return 20 * numpy.log(ratio)
+    return 20 * numpy.log10(ratio)
 
 def to_ratio(decibel):
     'デシベルから比率に変換'

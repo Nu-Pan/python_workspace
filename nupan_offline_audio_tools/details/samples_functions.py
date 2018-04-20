@@ -236,14 +236,14 @@ def convert_to_median_rms(samples, window_size):
     その結果として得られた RMS 配列の中央値を samples の RMS とみなす。
     '''
     per_ch_rms = []
+    window = numpy.ones(window_size) / window_size
     for i in range(0, samples.shape[1]):
         samples_ch = samples[:,i]
         samples_s = samples_ch * samples_ch
-        window = numpy.ones(window_size) / window_size
-        samples_ms = numpy.convolve(samples_s, window, 'full')
-        samples_rms = numpy.sqrt(samples_ms)
-        samples_rms.sort()
-        per_ch_rms.append(samples_rms[int(len(samples_rms)/2)])
+        samples_ms = numpy.convolve(samples_s, window, 'valid')
+        samples_ms.sort()
+        median_rms = numpy.sqrt(samples_ms[int(len(samples_ms)/2)])
+        per_ch_rms.append(median_rms)
     return mean(per_ch_rms)
 
 def convert_to_median_peak(samples, window_size):
@@ -255,3 +255,12 @@ def convert_to_median_peak(samples, window_size):
     samples_peak = scipy.ndimage.filters.maximum_filter1d(samples, window_size)
     samples_peak.sort()
     return samples_peak[int(len(samples_peak)/2)]
+
+def detect_zerocross_points(samples):
+    '''
+    引数 samples 中のゼロクロス点の位置をすべて列挙する。\n
+    位置はサンプル数単位。\n
+    '''
+    samples_next = samples[1:]
+    samples_next_sign = samples_next * samples[:samples.shape[0]-1]
+    return numpy.where(samples_next_sign <= 0)[0]

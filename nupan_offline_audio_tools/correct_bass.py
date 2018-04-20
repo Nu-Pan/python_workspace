@@ -63,7 +63,7 @@ def correct_bass(inputs, parameters):
         temp = i['stereo']
         temp = (temp[:, 0] + temp[:, 1]) / 2.0
         i['monoral_sample'] = temp
-        i['monoral_lowband_sample'] = extract_low_band(temp, parameters.samplerate)
+        i['monoral_lowband_sample'] = apply_zplr(temp, 'low', 200, parameters.samplerate)
 
     # TODO パラメータチェック
 
@@ -103,8 +103,8 @@ def correct_bass(inputs, parameters):
     if parameters.is_verbose:
         print('*** split low / high ***')
     for i in inputs:
-        i['click_corrected_low'] = extract_low_band(i['click_corrected'], parameters.samplerate)
-        i['click_corrected_high'] = extract_high_band(i['click_corrected'], parameters.samplerate)
+        i['click_corrected_low'] = apply_zplr(i['click_corrected'], 'low', 200, parameters.samplerate)
+        i['click_corrected_high'] = apply_zplr(i['click_corrected'], 'high', 200, parameters.samplerate)
 
     # 結果に名前をつける
     if parameters.is_verbose:

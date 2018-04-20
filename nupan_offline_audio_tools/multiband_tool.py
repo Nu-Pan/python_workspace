@@ -141,9 +141,10 @@ if __name__ == '__main__':
             target_criteria = criteria_array[int(len(criteria_array)/2)]
         # 基準量が揃うように振幅を調整＋ゲインを適用
         for i in INPUTS:
+            print('%s, criteria = %f.' % (decompose_path(i['path'])[1], to_decibel(i['band_criteria_' + param.sufix])))
             i['band_sample_' + param.sufix] = i['band_sample_' + param.sufix] * (target_criteria / i['band_criteria_' + param.sufix]) * to_ratio(param.gain)
 
-    # ファイル出力
+    # ファイル出力（個別）
     for i in INPUTS:
         result_samples = create_same_zeros(i['stereo'])
         for param in band_params:
@@ -159,6 +160,29 @@ if __name__ == '__main__':
         dir_path, stem, ext = decompose_path(i['path'])
         outpath = dir_path + '\\' + output_file_prefix + stem + output_file_sufix + ext
         save_samples(outpath, result_samples, SAMPLERATE, 'float')
+
+    # ファイル出力（バンド単位＆全バンド全結合）
+    result_full_packed = None
+    for param in band_params:
+        # バンド単位の全結合サンプル列を生成
+        result_samples = numpy.empty((0, 2), INTERNAL_SAMPLE_FORMAT)
+        for i in INPUTS:
+            band = i['band_sample_' + param.sufix]
+            result_samples = compose_samples(result_samples, band)
+        # 全バンド前結合に加算
+        if result_full_packed is None:
+            result_full_packed = result_samples
+        else:
+            result_full_packed += result_samples
+        # 必要ならバンド単位の結果をファイルアウト
+        if param.is_file_out:
+            dir_path, stem, ext = decompose_path(i['path'])
+            outpath = dir_path + '\\' + output_file_prefix + "packed" + param.sufix + ext
+            save_samples(outpath, result_samples, SAMPLERATE, 'float')
+    # 全バンド全結合のファイルアウト
+    dir_path, stem, ext = decompose_path(i['path'])
+    outpath = dir_path + '\\' + output_file_prefix + "packed" + output_file_sufix + ext
+    save_samples(outpath, result_full_packed, SAMPLERATE, 'float')
 
     # 正常終了
     exit(0)

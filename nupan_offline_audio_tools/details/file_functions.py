@@ -26,6 +26,8 @@ def make_directory_exist(path):
         return
     if not os.path.isdir(path):
         directory, _, _ = decompose_path(path)
+    if directory == '':
+        return
     if not os.path.exists(directory):
         os.makedirs(directory)
 
