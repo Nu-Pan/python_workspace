@@ -229,6 +229,51 @@ def detect_click(samples, peak_amplitude_threshold, torelence_period_error_rate)
     # 正常終了
     return click_zerocross_offset
 
+def detect_positive_zero_cross(samples):
+    '''
+    samples 中の「ゼロクロスポイント」を検出する。\n
+    samples は変化のほぼない一定の波形であることを仮定する。\n
+    「ゼロクロスポイント」は samples 先頭からのサンプル数で返却される。\n
+    以下の条件を満たす「ゼロクロスポイント」１つを結果として返却する。\n
+    - 先頭からのサンプル数が triming_offset 以上
+    - 最も先頭に近い
+    - 次のサンプルが正の値を取る
+    '''
+    # samples 中の全てのゼロクロスポイントを検出
+    samples_next = samples[1:]
+    samples_next_sign = samples_next * samples[:samples.shape[0]-1]
+    samples_zerocross_offset = numpy.where(samples_next_sign <= 0)[0]
+
+    # 正常終了
+    return samples_zerocross_offset
+
+def detect_positive_extrema(samples):
+    '''
+    samples 中の「極値」を検出する。\n
+    samples は変化のほぼない一定の波形であることを仮定する。\n
+    「極値」は samples 先頭からのサンプル数で返却される。\n
+    以下の条件を満たす「極値」１つを結果として返却する。\n
+    - 先頭からのサンプル数が triming_offset 以上
+    - 最も先頭に近い
+    - 正の値をとる
+    - １つ前の極値が負である
+    '''
+    # samples 中のすべての極値を検出
+    extremas = argextrema(samples)
+
+    # 負の方向の極値→正の方向の極値になるものを探索
+    '''
+    @note:
+        いい手が思いつかなかったのでナイーブに for で実装。            
+    '''
+    selected_extremas = numpy.empty((0,), numpy.int64)
+    for i in range(1, extremas.shape[0]):
+        if samples[extremas[i-1]] < 0 and 0 < samples[extremas[i]]:
+            selected_extremas = numpy.append(selected_extremas, extremas[i])
+
+    # 正常終了
+    return selected_extremas
+
 def convert_to_median_rms(samples, window_size):
     '''
     引数 samples を RMS に変換する。

@@ -80,9 +80,9 @@ def where_nearest(array, query):
     '''
     return numpy.abs(array - query).argmin()
 
-def value_nearest(array, query):
+def get_nearest_value(array, query):
     '''
-    array 中の query に最も近ち値を得る
+    array 中の query に最も近い値を得る
     '''
     return array[where_nearest(array, query)]
 

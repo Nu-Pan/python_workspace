@@ -34,9 +34,8 @@ class correct_bass_parameters:
         self.bpm = 0
         self.bpm = 128
         self.head_click_offset = Fraction(0, 1)
-        self.detection_offset_in_samples = 2**13
-        self.peak_amplitude_threshold = 0.9
-        self.torelence_period_error_rate = 0.1
+        self.mode = 'zero-cross'
+        self.detection_offset_iden_samples = 2**13
         self.is_verbose = False
 
 # ------------------------------------------------------------------------------
@@ -87,12 +86,17 @@ def correct_bass(inputs, parameters):
         if parameters.is_verbose:
             print('path=' + i['path'])
         # 波形から「クリック」位置を検出
-        detected_click = detect_click(i['monoral_lowband_sample'], parameters.peak_amplitude_threshold, parameters.torelence_period_error_rate)
+        if parameters.mode == 'zero-cross':
+            detected_click = detect_positive_zero_cross(i['monoral_lowband_sample'])
+        elif parameters.mode == 'extrema':
+            detected_click = detect_positive_extrema(i['monoral_lowband_sample'])
+        else:
+            raise RuntimeError('Unknown mode string : ' + parameters.mode)
         if parameters.is_verbose:
             print('detected_click.size=%d' % detected_click.size)
             print(detected_click)
         # 波形中の最適クリックオフセットに最も近いクリックを選択
-        actual_head_click_offset = value_nearest(detected_click, detection_head_click_offset_in_samples)
+        actual_head_click_offset = get_nearest_value(detected_click, detection_head_click_offset_in_samples)
         if parameters.is_verbose:
             print('detection_head_click_offset_in_samples=%d' % detection_head_click_offset_in_samples)        
             print('actual_head_click_offset=%d' % actual_head_click_offset)        
@@ -161,9 +165,8 @@ if __name__ == '__main__':
     parameters.samplerate = SAMPLERATE
     parameters.bpm = int(config['specific']['bpm'])
     parameters.head_click_offset = Fraction(config['specific']['head_click_offset'])
+    parameters.mode = config['specific']['mode']
     parameters.detection_offset_in_samples = int(config['empirical']['detection_offset_in_samples'])
-    parameters.peak_amplitude_threshold = float(config['empirical']['peak_amplitude_threshold'])
-    parameters.torelence_period_error_rate = float(config['empirical']['torelence_period_error_rate'])
     parameters.is_verbose = bool(config['empirical']['is_verbose'])
 
     # 補正処理呼び出し
