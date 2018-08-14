@@ -2,7 +2,8 @@ import sys
 import os
 import glob
 import re
-import soundfile as sf
+import scipy.io.wavfile as wf
+import numpy as np
 
 from .default_constants import *
 from .helper_functions import *
@@ -67,15 +68,35 @@ def load_samples(samples_path, internal_sample_format):
     if not os.path.exists(samples_path):
         raise Exception('Specified file "%s" has not existed.' % samples_path)
     # ロード
-    input_samples, sample_rate = sf.read(file=samples_path, dtype=internal_sample_format)
-    return input_samples, sample_rate
+    sample_rate, input_samples = wf.read(samples_path)
+    # フォーマットを指定のものに変換する
+    if internal_sample_format == 'float64':
+        converted_samples = input_samples.astype(np.float64)
+    elif internal_sample_format == 'float32':
+        converted_samples = input_samples.astype(np.float32)
+    elif internal_sample_format == 'int32':
+        converted_samples = input_samples.astype(np.int32)
+    elif internal_sample_format == 'int16':
+        converted_samples = input_samples.astype(np.int16)
+    else:
+        raise RuntimeError('Invalid data type string : ' + internal_sample_format)
+    return converted_samples, sample_rate
 
 def save_samples(samples_path, samples, samplerate, export_sample_format):
     '''
     wav ファイルにサンプル列をセーブする
     '''
     make_directory_exist(samples_path)
-    sf.write(samples_path, samples, samplerate, export_sample_format)
+    # フォーマットを指定のものに変換する
+    if export_sample_format == 'float32':
+        converted_samples = samples.astype(np.float32)
+    elif export_sample_format == 'int32':
+        converted_samples = samples.astype(np.int32)
+    elif export_sample_format == 'int16':
+        converted_samples = samples.astype(np.int16)
+    else:
+        raise RuntimeError('Invalid data type string : ' + export_sample_format)
+    wf.write(samples_path, samplerate, converted_samples)
 
 def find_wav_files(dir_path):
     '''

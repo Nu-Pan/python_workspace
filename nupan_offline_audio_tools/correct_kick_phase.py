@@ -27,6 +27,7 @@ class correct_kick_parameters:
         self.samplerate = 0
         self.bpm = 128
         self.snap_offset = Fraction(0, 1)
+        self.mode = 'zero-cross'
         self.is_verbose = False
 
 # ------------------------------------------------------------------------------
@@ -35,8 +36,8 @@ class correct_kick_parameters:
 
 def correct_kick(input, parameters):
     '''
-    パラメータだ指定された時点にゼロクロスポイントが来るように\n
-    inputs に含まれるキック波形を補正する。\n
+    パラメータで指定された時点に`ポイント`が来るように inputs に含まれるキック波形を補正する。\n
+    `ポイント`はゼロクロスや極値をとる点などから選択可能。\n
     補正処理は再生速度の変化（リサンプリング）として実装される。\n
     補正処理は in-place で行われる。\n
     \n
@@ -62,17 +63,22 @@ def correct_kick(input, parameters):
     if parameters.is_verbose:
         print('sanpe_offset_in_samples = %d' % sanpe_offset_in_samples)
 
-    # 入力キックサンプル列のゼロクロスポイントをすべて列挙
-    zero_cross_points = detect_zerocross_points(input['monoral_sample'])
+    # 入力キックサンプル列のをすべて列挙
+    if parameters.mode == 'zero-cross':
+        detected_points = detect_zerocross_points(input['monoral_sample'])
+    elif parameters.mode == 'extrema':
+        detected_points = argextrema(input['monoral_sample'])
+    else:
+        raise RuntimeError('Unknown mode type string : ' + parameters.mode)
 
     # 検出されたゼロクロスポイントのうち「スナップタイミングよりも後でかつ最小」のものを選択
-    source_offset_in_samples = zero_cross_points[sanpe_offset_in_samples < zero_cross_points][0]
+    source_offset_in_samples = detected_points[sanpe_offset_in_samples < detected_points][0]
 
     # リサンプル実行
     input['corrected'] = signal.resample(input['stereo'], int(len(input['monoral_sample']) * sanpe_offset_in_samples / source_offset_in_samples))
 
     # 正常終了
-    return False
+    return
 
 # ------------------------------------------------------------------------------
 # main
@@ -113,12 +119,11 @@ if __name__ == '__main__':
     parameters.samplerate = SAMPLERATE
     parameters.bpm = int(config['specific']['bpm'])
     parameters.snap_offset = Fraction(config['specific']['snap_offset'])
+    parameters.mode = config['specific']['mode']
     parameters.is_verbose = bool(config['empirical']['is_verbose'])
 
     # 補正処理呼び出し
-    if correct_kick(INPUT, parameters):
-        print('(error) : Some error has occured.')
-        exit(1)
+    correct_kick(INPUT, parameters)
 
     # 補正をかけたキック波形を出力
     directory, name, extension = decompose_path(INPUT['path'])
