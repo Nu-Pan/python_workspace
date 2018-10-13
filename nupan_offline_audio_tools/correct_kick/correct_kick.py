@@ -7,6 +7,8 @@ import configparser
 import numpy
 from scipy import signal
 
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+
 from details import *
 
 # import matplotlib.pyplot as plt
